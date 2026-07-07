@@ -1,59 +1,146 @@
-<p align="center"><a href="https://laravel.com" target="_blank"><img src="https://raw.githubusercontent.com/laravel/art/master/logo-lockup/5%20SVG/2%20CMYK/1%20Full%20Color/laravel-logolockup-cmyk-red.svg" width="400" alt="Laravel Logo"></a></p>
+# SIAKAD Terdistribusi
 
-<p align="center">
-<a href="https://github.com/laravel/framework/actions"><img src="https://github.com/laravel/framework/workflows/tests/badge.svg" alt="Build Status"></a>
-<a href="https://packagist.org/packages/laravel/framework"><img src="https://img.shields.io/packagist/dt/laravel/framework" alt="Total Downloads"></a>
-<a href="https://packagist.org/packages/laravel/framework"><img src="https://img.shields.io/packagist/v/laravel/framework" alt="Latest Stable Version"></a>
-<a href="https://packagist.org/packages/laravel/framework"><img src="https://img.shields.io/packagist/l/laravel/framework" alt="License"></a>
-</p>
+Sistem Layanan Informasi Akademik (SIAKAD) berbasis arsitektur **basis data terdistribusi**, dikembangkan untuk mengatasi *bottleneck* pemrosesan transaksional saat periode pengisian Kartu Rencana Studi (KRS). Proyek ini disusun sebagai Tugas Akhir Ujian Akhir Semester mata kuliah Perancangan Basis Data Terdistribusi.
 
-## About Laravel
+> 📄 Dokumen SRS lengkap dan Laporan Analisis Kesesuaian (Gap Analysis) tersedia terpisah sebagai lampiran.
 
-Laravel is a web application framework with expressive, elegant syntax. We believe development must be an enjoyable and creative experience to be truly fulfilling. Laravel takes the pain out of development by easing common tasks used in many web projects, such as:
+---
 
-- [Simple, fast routing engine](https://laravel.com/docs/routing).
-- [Powerful dependency injection container](https://laravel.com/docs/container).
-- Multiple back-ends for [session](https://laravel.com/docs/session) and [cache](https://laravel.com/docs/cache) storage.
-- Expressive, intuitive [database ORM](https://laravel.com/docs/eloquent).
-- Database agnostic [schema migrations](https://laravel.com/docs/migrations).
-- [Robust background job processing](https://laravel.com/docs/queues).
-- [Real-time event broadcasting](https://laravel.com/docs/broadcasting).
+## Arsitektur Sistem
 
-Laravel is accessible, powerful, and provides tools required for large, robust applications.
+Sistem terdiri atas **3 Node Regional** yang otonom dan **1 Node Pusat (GCS)**, dihubungkan melalui Nginx Gateway dengan routing berbasis subdomain:
 
-## Learning Laravel
+```
+Web Browser
+     │
+     ▼
+Nginx Gateway (routing subdomain)
+     │
+     ├── Regional 1 — Teknik & Ilmu Komputer   → Laravel + Redis + PostgreSQL
+     ├── Regional 2 — Ekonomi & Bisnis          → Laravel + Redis + PostgreSQL
+     └── Regional 3 — Kedokteran & Kesehatan    → Laravel + Redis + PostgreSQL
+                    │
+                    ▼ (replikasi master data & sinkronisasi transaksi terjadwal)
+          GCS Pusat — PostgreSQL (Konsolidasi & Master Data)
+```
 
-Laravel has the most extensive and thorough [documentation](https://laravel.com/docs) and video tutorial library of all modern web application frameworks, making it a breeze to get started with the framework. You can also check out [Laravel Learn](https://laravel.com/learn), where you will be guided through building a modern Laravel application.
+Setiap Node Regional memiliki basis data PostgreSQL **fisik terpisah** dan beroperasi mandiri (kegagalan satu node tidak memengaruhi node lain). Node Pusat berfungsi sebagai repositori agregasi *read-only* untuk data KRS/Nilai serta sumber otoritatif master data (Mata Kuliah, Dosen, Ruangan).
 
-If you don't feel like reading, [Laracasts](https://laracasts.com) can help. Laracasts contains thousands of video tutorials on a range of topics including Laravel, modern PHP, unit testing, and JavaScript. Boost your skills by digging into our comprehensive video library.
+---
 
-## Laravel Sponsors
+## Teknologi
 
-We would like to extend our thanks to the following sponsors for funding Laravel development. If you are interested in becoming a sponsor, please visit the [Laravel Partners program](https://partners.laravel.com).
+| Komponen | Teknologi |
+|---|---|
+| Framework Aplikasi | Laravel 12 (PHP 8.2) |
+| Basis Data | PostgreSQL 15 (4 instance independen) |
+| Message Broker / Cache | Redis 7 |
+| Reverse Proxy / Gateway | Nginx |
+| Containerization | Docker & Docker Compose |
+| Frontend | Blade + Tailwind CSS (CDN) + Vanilla JS |
 
-### Premium Partners
+---
 
-- **[Vehikl](https://vehikl.com)**
-- **[Tighten Co.](https://tighten.co)**
-- **[Kirschbaum Development Group](https://kirschbaumdevelopment.com)**
-- **[64 Robots](https://64robots.com)**
-- **[Curotec](https://www.curotec.com/services/technologies/laravel)**
-- **[DevSquad](https://devsquad.com/hire-laravel-developers)**
-- **[Redberry](https://redberry.international/laravel-development)**
-- **[Active Logic](https://activelogic.com)**
+## Fitur
 
-## Contributing
+### 👨‍🎓 Mahasiswa
+- Dashboard KRS dengan status kuota kelas *real-time*
+- Pengisian KRS melalui antrean FIFO (Redis Queue) — anti *race condition*
+- Validasi otomatis: status keuangan, kuota kelas, prasyarat mata kuliah
+- Kartu Hasil Studi (KHS) & perhitungan IPK otomatis
 
-Thank you for considering contributing to the Laravel framework! The contribution guide can be found in the [Laravel documentation](https://laravel.com/docs/contributions).
+### 👨‍🏫 Dosen
+- Kelola kelas yang diampu per semester
+- Input & rekap presensi per pertemuan
+- Input nilai dan finalisasi (nilai final bersifat *immutable*)
 
-## Code of Conduct
+### 🏢 Admin BAAK (Regional)
+- Kelola Mata Kuliah, Dosen, Ruangan
+- Buka Kelas baru (assign dosen, ruangan, kuota, semester)
+- Kalender akademik (buka/tutup periode KRS)
+- Revisi nilai pasca-finalisasi (tercatat di audit log)
+- Kelola status keuangan mahasiswa
+- Ekspor data ke format PDDIKTI Neo Feeder
 
-In order to ensure that the Laravel community is welcoming to all, please review and abide by the [Code of Conduct](https://laravel.com/docs/contributions#code-of-conduct).
+### 🌐 GCS Pusat (BAAK Pusat)
+- Monitoring status online/offline tiap Node Regional
+- Agregasi data KRS & Nilai lintas regional
+- Kelola master data terpusat dengan replikasi granular per regional
+- Kelola akun pengguna (mahasiswa/dosen/BAAK) tiap regional
+- Sinkronisasi terjadwal ke tabel konsolidasi (dengan mekanisme *retry* & eskalasi kegagalan)
+- Audit log terpusat, *append-only*
 
-## Security Vulnerabilities
+---
 
-If you discover a security vulnerability within Laravel, please send an e-mail to Taylor Otwell via [taylor@laravel.com](mailto:taylor@laravel.com). All security vulnerabilities will be promptly addressed.
+## Instalasi & Menjalankan Proyek
 
-## License
+### Prasyarat
+- Docker Desktop
+- PHP 8.2+ & Composer (untuk instalasi awal dependency)
 
-The Laravel framework is open-sourced software licensed under the [MIT license](https://opensource.org/licenses/MIT).
+### Langkah Setup
+
+```bash
+# 1. Clone repository
+git clone https://github.com/USERNAME/siakad-terdistribusi.git
+cd siakad-terdistribusi
+
+# 2. Salin file environment
+cp .env.example .env
+
+# 3. Install dependency PHP
+composer install
+
+# 4. Build & jalankan container
+docker-compose up -d
+
+# 5. Generate application key
+docker-compose exec laravel.test php artisan key:generate
+
+# 6. Jalankan migration & seeder ke semua node
+docker-compose exec laravel.test php artisan migrate --seed
+docker-compose exec laravel.test php artisan migrate --seed --database=pgsql_r2
+docker-compose exec laravel.test php artisan migrate --seed --database=pgsql_r3
+docker-compose exec laravel.test php artisan migrate --database=pgsql_pusat
+
+# 7. Jalankan queue worker (di terminal terpisah)
+docker-compose exec laravel.test php artisan queue:work redis --verbose
+```
+
+### Konfigurasi Hosts (routing subdomain)
+
+Tambahkan baris berikut ke `C:\Windows\System32\drivers\etc\hosts` (jalankan sebagai Administrator):
+```
+127.0.0.1 teknik.siakad.test
+127.0.0.1 ekonomi.siakad.test
+127.0.0.1 kesehatan.siakad.test
+127.0.0.1 pusat.siakad.test
+```
+
+### Akun Uji Coba
+
+| Role | Email | Password |
+|---|---|---|
+| Mahasiswa (R1) | luthfi@student.sttc.ac.id | password123 |
+| Dosen (R1) | siti@dosen.sttc.ac.id | password123 |
+| BAAK Regional 1 | admin@baak.sttc.ac.id | password123 |
+| BAAK Pusat | pusat@baak.sttc.ac.id | password123 |
+
+---
+
+## Struktur Basis Data
+
+Setiap Node Regional menerapkan **fragmentasi horizontal** berbasis `id_regional` pada tabel transaksional (`mahasiswa`, `kelas`, `krs`, `nilai`), sementara tabel master (`mata_kuliah`, `dosen`, `ruangan`) direplikasi secara selektif dari Node Pusat. Tabel `audit_log` bersifat *append-only* (diproteksi PostgreSQL `RULE`) dan hanya berada di Node Pusat.
+
+---
+
+## Catatan Pengembangan
+
+Beberapa aspek non-fungsional lanjutan (autentikasi JWT terpusat, PostgreSQL Logical Replication native, *High Availability*/node standby, enkripsi TLS antar-node) belum diimplementasikan secara penuh karena keterbatasan waktu pengembangan. Rincian lengkap kesesuaian requirement SRS terhadap implementasi didokumentasikan pada **Laporan Analisis Kesesuaian** terpisah.
+
+---
+
+## Kontributor
+
+**Luthfi Isa Majid**
+Program Studi Informatika — Sekolah Tinggi Teknologi Cipasung
