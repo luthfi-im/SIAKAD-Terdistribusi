@@ -38,7 +38,7 @@ services:
       - laravel.test
 
   pgsql:
-    image: "bitnamilegacy/postgresql-repmgr:15"
+    image: "soldevelo/postgresql-repmgr:15"
     ports:
       - "${FORWARD_DB_PORT:-5432}:5432"
     environment:
@@ -115,7 +115,7 @@ services:
       timeout: 5s
 
   pgsql_r1a:
-    image: "bitnamilegacy/postgresql-repmgr:15"
+    image: "soldevelo/postgresql-repmgr:15"
     ports:
       - "5436:5432"
     environment:
